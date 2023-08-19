@@ -1,5 +1,41 @@
 import OpenAI from 'openai';
-import fs from 'fs';
+import { Client } from 'pg';
+
+async function getCreateTableStatements(connectionString: string): Promise<string[]> {
+  const client = new Client({ connectionString });
+  await client.connect();
+
+  const query = `
+    SELECT table_name, column_name, column_default, is_nullable, data_type, character_maximum_length
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+    ORDER BY table_name, ordinal_position;
+  `;
+
+  const res = await client.query(query);
+  await client.end();
+
+  const tables: { [key: string]: any[] } = {};
+  res.rows.forEach((row: any) => {
+    if (!tables[row.table_name]) tables[row.table_name] = [];
+    tables[row.table_name].push(row);
+  });
+
+  const createTableStatements = Object.keys(tables).map(tableName => {
+    const columns = tables[tableName]
+      .map(column => {
+        const type = column.character_maximum_length ? `${column.data_type}(${column.character_maximum_length})` : column.data_type;
+        const defaultVal = column.column_default ? `DEFAULT ${column.column_default}` : '';
+        const nullable = column.is_nullable === 'YES' ? '' : 'NOT NULL';
+        return `  ${column.column_name} ${type} ${defaultVal} ${nullable}`;
+      })
+      .join(',\n');
+
+    return `CREATE TABLE ${tableName} (\n${columns}\n);`;
+  });
+
+  return createTableStatements;
+}
 
 export async function POST(request: Request): Promise<Response> {
   if (!process.env.OPENAI_API_KEY) return new Response(JSON.stringify({ message: 'OpenAI API key not found' }), { status: 500 });
@@ -15,18 +51,21 @@ export async function POST(request: Request): Promise<Response> {
       .replaceAll('  ', ' ').replaceAll('\n', ''),
   });
 
-  const schemaLines = fs.readFileSync('schema.sql', 'utf-8').split('\n\n');
-
-  // feed the table definitions to the AI
-  // note: this is not a perfect solution, as other constraints will need to be inferred, but reduces the number of prompts to within the token limit
-  schemaLines.forEach((part) => {
-    if (part.includes('CREATE TABLE')) {
-      conversation.push({ 'role': 'system', 'content': `${part}` });
+  if (process.env.POSTGRES_CONNECTION_STRING) {
+    try {
+      const createTableStatements = await getCreateTableStatements(process.env.POSTGRES_CONNECTION_STRING);
+      createTableStatements.forEach((part) => {
+        conversation.push({ 'role': 'system', 'content': `${part}` });
+      });
+    } catch (error) {
+      return new Response(JSON.stringify({ message: 'Failed to get CREATE TABLE statements', error }), { status: 500 });
     }
-  });
+  }
 
   // Add the user's query to the conversation
   conversation.push({ 'role': 'user', 'content': query });
+
+  console.log({ conversation });
 
   const completion = await openai.chat.completions.create({
     messages: conversation as any,
