@@ -39,6 +39,8 @@ async function getCreateTableStatements(connectionString: string): Promise<strin
 
 export async function POST(request: Request): Promise<Response> {
   if (!process.env.OPENAI_API_KEY) return new Response(JSON.stringify({ message: 'OpenAI API key not found' }), { status: 500 });
+  if (!process.env.POSTGRES_CONNECTION_STRING) return new Response(JSON.stringify({ message: 'Postgres connection string not found' }), { status: 500 });
+
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   const { query } = await request.json();
@@ -51,15 +53,13 @@ export async function POST(request: Request): Promise<Response> {
       .replaceAll('  ', ' ').replaceAll('\n', ''),
   });
 
-  if (process.env.POSTGRES_CONNECTION_STRING) {
-    try {
-      const createTableStatements = await getCreateTableStatements(process.env.POSTGRES_CONNECTION_STRING);
-      createTableStatements.forEach((part) => {
-        conversation.push({ 'role': 'system', 'content': `${part}` });
-      });
-    } catch (error) {
-      return new Response(JSON.stringify({ message: 'Failed to get CREATE TABLE statements', error }), { status: 500 });
-    }
+  try {
+    const createTableStatements = await getCreateTableStatements(process.env.POSTGRES_CONNECTION_STRING);
+    createTableStatements.forEach((part) => {
+      conversation.push({ 'role': 'system', 'content': `${part}` });
+    });
+  } catch (error) {
+    return new Response(JSON.stringify({ message: 'Failed to get CREATE TABLE statements', error }), { status: 500 });
   }
 
   // Add the user's query to the conversation
