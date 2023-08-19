@@ -65,8 +65,6 @@ export async function POST(request: Request): Promise<Response> {
   // Add the user's query to the conversation
   conversation.push({ 'role': 'user', 'content': query });
 
-  console.log({ conversation });
-
   const completion = await openai.chat.completions.create({
     messages: conversation as any,
     model: 'gpt-4',
