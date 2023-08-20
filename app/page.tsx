@@ -4,9 +4,11 @@ import { useState } from 'react';
 export default function QueryComponent() {
   const [query, setQuery] = useState('');
   const [result, setResult] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setLoading(true);
     const response = await fetch('/api/query', {
       method: 'POST',
       body: JSON.stringify({ query }),
@@ -15,6 +17,7 @@ export default function QueryComponent() {
       }
     });
     const data = await response.text();
+    setLoading(false);
     setResult(data);
   };
 
@@ -28,7 +31,7 @@ export default function QueryComponent() {
             placeholder='Write query request here...'
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            style={{ height: 42, width: 300 }}
+            style={{ height: 42, width: 420 }}
             className="border border-gray-400 rounded px-4 py-2 mb-4 mr-2"
           />
           <button type="submit" className="bg-purple-800 text-white px-4 py-2 rounded" style={{ height: 42 }}>
@@ -36,11 +39,16 @@ export default function QueryComponent() {
           </button>
         </div>
       </form>
-      {result && (
+      {loading &&
+        <div className="mt-4">
+          <p>Generating...</p>
+        </div>
+      }
+      {result &&
         <div className="mt-4">
           <pre>{result}</pre>
         </div>
-      )}
+      }
     </div>
   );
 };
